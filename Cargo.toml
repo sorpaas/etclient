@@ -1,0 +1,15 @@
+[package]
+name = "etclient"
+version = "0.1.0"
+license = "Apache-2.0"
+description = "A light client for Ethereum Classic built on top of SputnikVM and etcommon-worldstate storage."
+authors = ["Wei Tang <hi@that.world>"]
+repository = "https://github.com/ethereumproject/etclient"
+
+[dependencies]
+etclient-core = { path = "./core" }
+
+[workspace]
+members = [
+  "./core"
+]
