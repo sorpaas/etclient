@@ -3,9 +3,8 @@
 [![Build Status](https://travis-ci.org/sorpaas/etclient.svg?branch=master)](https://travis-ci.org/sorpaas/etclien)
 
 An bare minimum Ethereum client built on top of SputnikVM and
-`etcommon-worldstate`
-storage. See [this page](https://that.world/~source/etclient.html) for
-the current progress.
+`etcommon`. See [this page](https://that.world/~source/etclient.html)
+for the current progress.
 
 You can try this out by installing Rust and then run:
 
