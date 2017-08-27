@@ -7,6 +7,14 @@ extern crate block;
 extern crate hexutil;
 extern crate blockchain;
 extern crate trie;
+extern crate bloom;
+extern crate sputnikvm;
+extern crate sputnikvm_stateful;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
+extern crate ethash;
 
 #[macro_use]
 extern crate futures;
