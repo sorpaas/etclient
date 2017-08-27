@@ -2,13 +2,13 @@ mod genesis;
 
 use trie::FixedMemoryTrie;
 use bigint::{U256, H256, Gas};
-use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log};
+use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log, TransactionAction};
 use bloom::LogsBloom;
 use sha3::{Digest, Keccak256};
 use rlp;
 use ethash;
 use blockchain::chain::{HeaderHash, Chain};
-use sputnikvm::vm::{self, Patch, HeaderParams, VM, SeqTransactionVM};
+use sputnikvm::vm::{self, Patch, HeaderParams, VM, SeqTransactionVM, ValidTransaction};
 use sputnikvm_stateful::MemoryStateful;
 
 use std::collections::HashMap;
@@ -24,6 +24,14 @@ pub fn patch(number: U256) -> &'static Patch {
     } else {
         &vm::EIP160_PATCH
     }
+}
+
+pub fn validate_gas_limit(last_gas_limit: Gas, this_gas_limit: Gas) -> bool {
+    let lower_bound = last_gas_limit - last_gas_limit / Gas::from(1024u64);
+    let upper_bound = last_gas_limit + last_gas_limit / Gas::from(1024u64);
+
+    this_gas_limit < upper_bound && this_gas_limit > lower_bound &&
+        this_gas_limit >= Gas::from(5000u64)
 }
 
 pub fn calculate_difficulty(
@@ -141,7 +149,6 @@ impl Validator {
     }
 
     pub fn append_block(&mut self, block: Block) {
-        println!("current best: {:?}", self.chain.best());
         assert!(self.validate(&block));
 
         let total = TotalHeader::from_parent(block.header, self.chain.best());
@@ -153,11 +160,13 @@ impl Validator {
             self.regenerate_dag(block.header.number);
         }
 
-        self.validate_basic(block) &&
-            self.validate_timestamp_and_difficulty(&block.header) &&
-            self.validate_consensus(&block.header) &&
-            self.validate_gas_limit(&block.header) &&
-            self.validate_state(block)
+        let basic = self.validate_basic(block);
+        let timestamp_and_difficulty = self.validate_timestamp_and_difficulty(&block.header);
+        let consensus = self.validate_consensus(&block.header);
+        let gas_limit = self.validate_gas_limit(&block.header);
+        let state = self.validate_state(block);
+
+        basic && timestamp_and_difficulty && consensus && gas_limit && state
     }
 
     pub fn validate_consensus(&self, header: &Header) -> bool {
@@ -187,11 +196,8 @@ impl Validator {
 
     pub fn validate_gas_limit(&self, header: &Header) -> bool {
         let parent_gas_limit = self.chain.best().0.gas_limit;
-        let lower_bound = parent_gas_limit - parent_gas_limit / Gas::from(1024u64);
-        let upper_bound = parent_gas_limit + parent_gas_limit / Gas::from(1024u64);
 
-        header.gas_limit < upper_bound && header.gas_limit > lower_bound &&
-            header.gas_limit >= Gas::from(125000u64)
+        validate_gas_limit(parent_gas_limit, header.gas_limit)
     }
 
     pub fn validate_state(&mut self, block: &Block) -> bool {
@@ -200,6 +206,10 @@ impl Validator {
         let mut next_hash = self.chain.best().header_hash();
         for _ in 0..256 {
             most_recent_block_hashes.push(next_hash);
+
+            if next_hash == H256::default() {
+                break;
+            }
             let this_block = self.chain.fetch(next_hash).unwrap();
             next_hash = this_block.parent_hash();
         }
@@ -236,6 +246,34 @@ impl Validator {
             block_logs_bloom = block_logs_bloom | logs_bloom;
             block_used_gas = block_used_gas + used_gas;
             receipts.push(receipt);
+        }
+
+        // Apply block rewards
+        let basic_rewards = U256::from(5000000000000000000usize);
+        let main_rewards = basic_rewards + basic_rewards * U256::from(block.ommers.len()) / U256::from(32usize);
+        let vm: SeqTransactionVM = self.stateful.execute(
+            ValidTransaction {
+                caller: None,
+                gas_price: Gas::zero(),
+                gas_limit: Gas::from(1000000usize),
+                action: TransactionAction::Call(block.header.beneficiary),
+                value: main_rewards,
+                input: Vec::new(),
+                nonce: U256::zero(),
+            }, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
+
+        for uncle in &block.ommers {
+            let sub_rewards = basic_rewards - basic_rewards * (block.header.number - uncle.number) / U256::from(8usize);
+            let vm: SeqTransactionVM = self.stateful.execute(
+            ValidTransaction {
+                caller: None,
+                gas_price: Gas::zero(),
+                gas_limit: Gas::from(1000000usize),
+                action: TransactionAction::Call(uncle.beneficiary),
+                value: sub_rewards,
+                input: Vec::new(),
+                nonce: U256::zero(),
+            }, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
         }
 
         block.header.state_root == self.stateful.root() &&

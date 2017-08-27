@@ -136,10 +136,11 @@ fn main() {
 
     let mut best_number: U256 = U256::zero();
     let mut best_hash: H256 = H256::from_str(GENESIS_HASH).unwrap();
-    let mut validated_number: U256 = U256::one();
+    let mut validated_number: U256 = U256::zero();
     let mut known_headers: Vec<Header> = Vec::new();
     let mut known_bodies: HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)> = HashMap::new();
     let mut validator: Validator = Validator::new();
+
     let mut got_bodies_for_current = true;
 
     let dur = Duration::new(10, 0);
