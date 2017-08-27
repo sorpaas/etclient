@@ -26,6 +26,7 @@ extern crate sha3;
 
 mod validator;
 
+use validator::Validator;
 use tokio_core::reactor::{Core, Timeout};
 use secp256k1::SECP256K1;
 use secp256k1::key::{PublicKey, SecretKey};
@@ -81,12 +82,11 @@ const BOOTSTRAP_NODES: [&str; 10] = [
 // ];
 
 fn find_and_validate(
-    validated_number: U256, headers: &[Header], bodies: &HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)>
+    validator: &mut Validator, validated_number: U256, headers: &[Header], bodies: &HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)>
 ) -> U256 {
     let mut validated_number = validated_number.as_usize();
     if validated_number >= headers.len() { return U256::from(validated_number); }
 
-    validated_number += 1;
     for i in validated_number..headers.len() {
         if bodies.contains_key(&(headers[validated_number].transactions_root,
                                  headers[validated_number].ommers_hash)) {
@@ -97,7 +97,8 @@ fn find_and_validate(
                 transactions: body.0.clone(),
                 ommers: body.1.clone(),
             };
-            println!("validating block {:?}", block);
+            println!("validating block {:?} ...", block);
+            validator.append_block(block);
             validated_number += 1;
         } else {
             println!("block body not yet found: {}", validated_number);
@@ -135,9 +136,10 @@ fn main() {
 
     let mut best_number: U256 = U256::zero();
     let mut best_hash: H256 = H256::from_str(GENESIS_HASH).unwrap();
-    let mut validated_number: U256 = U256::zero();
+    let mut validated_number: U256 = U256::one();
     let mut known_headers: Vec<Header> = Vec::new();
     let mut known_bodies: HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)> = HashMap::new();
+    let mut validator: Validator = Validator::new();
     let mut got_bodies_for_current = true;
 
     let dur = Duration::new(10, 0);
@@ -191,7 +193,7 @@ fn main() {
                 })).unwrap();
 
                 validated_number = find_and_validate(
-                    validated_number, &known_headers, &known_bodies);
+                    &mut validator, validated_number, &known_headers, &known_bodies);
 
                 timeout = Timeout::new(dur, &handle).unwrap().boxed();
 
@@ -290,7 +292,7 @@ fn main() {
                         })).unwrap();
 
                         validated_number = find_and_validate(
-                            validated_number, &known_headers, &known_bodies);
+                            &mut validator, validated_number, &known_headers, &known_bodies);
 
                         timeout = Timeout::new(dur, &handle).unwrap().boxed();
                     },
