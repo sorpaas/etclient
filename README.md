@@ -1,5 +1,7 @@
 # Etclient
 
+[![Build Status](https://travis-ci.org/sorpaas/etclient.svg?branch=master)](https://travis-ci.org/sorpaas/etclien)
+
 An bare minimum Ethereum client built on top of SputnikVM and
 `etcommon-worldstate`
 storage. See [this page](https://that.world/~source/etclient.html) for
