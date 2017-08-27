@@ -12,7 +12,7 @@ use sha3::{Digest, Keccak256};
 use std::str::FromStr;
 use std::collections::HashMap;
 
-pub fn genesis_block(state_root: H256, full_size: usize, cache: &[u8]) -> Block {
+pub fn genesis_block(state_root: H256) -> Block {
     let extra_data = read_hex("11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa").unwrap();
     let ommers: Vec<Header> = Vec::new();
 
@@ -34,11 +34,6 @@ pub fn genesis_block(state_root: H256, full_size: usize, cache: &[u8]) -> Block 
         mix_hash: H256::default(),
     };
 
-    let partial = PartialHeader::from_full(header.clone());
-    let (mix_hash, result) = ethash::hashimoto_light(&partial, header.nonce, full_size, cache);
-
-    header.mix_hash = mix_hash;
-
     Block {
         header,
         transactions: Vec::new(),
@@ -46,7 +41,7 @@ pub fn genesis_block(state_root: H256, full_size: usize, cache: &[u8]) -> Block 
     }
 }
 
-fn transit_genesis<G: DatabaseGuard, D: DatabaseOwned>(stateful: &mut Stateful<G, D>) {
+pub fn transit_genesis<G: DatabaseGuard, D: DatabaseOwned>(stateful: &mut Stateful<G, D>) {
     #[derive(Serialize, Deserialize, Debug)]
     struct JSONAccount {
         balance: String,
@@ -79,5 +74,21 @@ fn transit_genesis<G: DatabaseGuard, D: DatabaseOwned>(stateful: &mut Stateful<G
             VMStatus::ExitedOk => (),
             _ => panic!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethash;
+    use blockchain::chain::HeaderHash;
+
+    #[test]
+    fn mainnet_genesis_block() {
+        let mut stateful = MemoryStateful::default();
+        transit_genesis(&mut stateful);
+
+        let genesis = genesis_block(stateful.root());
+        assert_eq!(genesis.header.header_hash(), H256::from_str("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3").unwrap());
     }
 }
