@@ -175,9 +175,10 @@ impl Validator {
 
         let (mix_hash, result) = ethash::hashimoto_light(&partial, header.nonce,
                                                          self.full_size, &self.cache);
+        let nonce_value: u64 = header.nonce.into();
 
-        // TODO: nonce <= 2^256 / difficulty
-        mix_hash == header.mix_hash
+        mix_hash == header.mix_hash &&
+            U256::from(nonce_value) <= ethash::cross_boundary(header.difficulty)
     }
 
     pub fn validate_basic(&self, block: &Block) -> bool {
