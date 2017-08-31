@@ -41,7 +41,7 @@ pub fn genesis_block(state_root: H256) -> Block {
     }
 }
 
-pub fn transit_genesis<G: DatabaseGuard, D: DatabaseOwned>(stateful: &mut Stateful<G, D>) {
+pub fn transit_genesis<D: DatabaseOwned>(stateful: &mut Stateful<D>) {
     #[derive(Serialize, Deserialize, Debug)]
     struct JSONAccount {
         balance: String,
