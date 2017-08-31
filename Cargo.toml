@@ -7,7 +7,7 @@ authors = ["Wei Tang <hi@that.world>"]
 repository = "https://github.com/ethereumproject/etclient"
 
 [dependencies]
-devp2p = "0.2"
+devp2p = "0.3"
 etcommon-bigint = "0.2"
 etcommon-hexutil = "0.2"
 etcommon-rlp = "0.2"
