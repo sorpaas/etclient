@@ -1,7 +1,7 @@
 mod genesis;
 
 use trie::FixedMemoryTrie;
-use bigint::{U256, H256, Gas};
+use bigint::{U256, H256, Gas, Address};
 use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log, TransactionAction};
 use bloom::LogsBloom;
 use sha3::{Digest, Keccak256};
@@ -11,8 +11,11 @@ use blockchain::chain::{HeaderHash, Chain};
 use sputnikvm::vm::{self, Patch, HeaderParams, VM, SeqTransactionVM, ValidTransaction};
 use sputnikvm_stateful::MemoryStateful;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::thread;
 use std::cmp::{min, max};
+use std::mem;
 
 pub fn patch(number: U256) -> &'static Patch {
     if number < U256::from(1150000) {
@@ -107,6 +110,104 @@ pub fn ommers_hash(ommers: &[Header]) -> H256 {
     let encoded = rlp::encode_list(ommers).to_vec();
     let hash = H256::from(Keccak256::digest(&encoded).as_slice());
     hash
+}
+
+fn is_modified(modified_addresses: &HashSet<Address>, accounts: &[vm::Account]) -> bool {
+    for account in accounts {
+        if modified_addresses.contains(&account.address()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+pub fn parallel_execute(
+    stateful: MemoryStateful, transactions: &[ValidTransaction], header: HeaderParams,
+    patch: &'static Patch, hashes: &[H256]
+) -> (MemoryStateful, Vec<Receipt>, LogsBloom, Gas) {
+    // TODO: Use a thread pool.
+
+    let stateful = Arc::new(stateful);
+    let mut threads = Vec::new();
+
+    // Execute all transactions in parallel.
+    for transaction in transactions {
+        let transaction = transaction.clone();
+        let header = header.clone();
+        let stateful = stateful.clone();
+        let hashes: Vec<H256> = hashes.into();
+
+        threads.push(thread::spawn(move || {
+            let vm: SeqTransactionVM = stateful.call(
+                transaction, header, patch, &hashes);
+            vm
+        }));
+    }
+
+    // Join all results together.
+    let mut thread_accounts = Vec::new();
+    for thread in threads {
+        let accounts = thread.join().unwrap();
+        thread_accounts.push(accounts);
+    }
+
+    // Now we only have a single reference to stateful, unwrap it and
+    // start the state transition.
+    let mut stateful = match Arc::try_unwrap(stateful) {
+        Ok(val) => val,
+        Err(_) => panic!(),
+    };
+    let mut modified_addresses = HashSet::new();
+
+    let mut receipts = Vec::new();
+    let mut block_logs_bloom = LogsBloom::new();
+    let mut block_used_gas = Gas::zero();
+
+    for (index, vm) in thread_accounts.into_iter().enumerate() {
+        let accounts: Vec<vm::Account> = vm.accounts().map(|v| v.clone()).collect();
+
+        let vm = if is_modified(&modified_addresses, &accounts) {
+            // TODO: use a more comprehensive merge strategy. Record
+            // storage index changed and only re-execute when indexes
+            // are the same.
+
+            // Re-execute the transaction if conflict is detected.
+            println!("Transaction index {}: conflict detected, re-execute.", index);
+            let vm: SeqTransactionVM = stateful.call(
+                transactions[index].clone(), header.clone(), patch, &[]);
+            vm
+        } else {
+            println!("Transaction index {}: parallel execution successful.", index);
+            vm
+        };
+
+        let accounts: Vec<vm::Account> = vm.accounts().map(|v| v.clone()).collect();
+        stateful.transit(&accounts);
+        modified_addresses.extend(vm.used_addresses().into_iter());
+
+        let logs: Vec<Log> = vm.logs().into();
+        let used_gas = vm.real_used_gas();
+        let mut logs_bloom = LogsBloom::new();
+        for log in logs.clone() {
+            logs_bloom.set(&log.address);
+            for topic in log.topics {
+                logs_bloom.set(&topic)
+            }
+        }
+
+        let receipt = Receipt {
+            used_gas: used_gas.clone(),
+            logs,
+            logs_bloom: logs_bloom.clone(),
+            state_root: stateful.root(),
+        };
+
+        block_logs_bloom = block_logs_bloom | logs_bloom;
+        block_used_gas = block_used_gas + used_gas;
+        receipts.push(receipt);
+    }
+
+    (stateful, receipts, block_logs_bloom, block_used_gas)
 }
 
 pub struct Validator {
@@ -215,39 +316,22 @@ impl Validator {
             next_hash = this_block.parent_hash();
         }
 
-        let mut receipts = Vec::new();
-        let mut block_logs_bloom = LogsBloom::new();
-        let mut block_used_gas = Gas::zero();
+        let mut stateful = MemoryStateful::default();
+        mem::swap(&mut stateful, &mut self.stateful);
 
+        let mut valid_transactions = Vec::new();
         for transaction in &block.transactions {
             let valid = match self.stateful.to_valid(transaction.clone(), patch) {
                 Ok(val) => val,
                 Err(_) => return false,
             };
-            let vm: SeqTransactionVM = self.stateful.execute(
-                valid, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
-
-            let logs: Vec<Log> = vm.logs().into();
-            let used_gas = vm.real_used_gas();
-            let mut logs_bloom = LogsBloom::new();
-            for log in logs.clone() {
-                logs_bloom.set(&log.address);
-                for topic in log.topics {
-                    logs_bloom.set(&topic)
-                }
-            }
-
-            let receipt = Receipt {
-                used_gas: used_gas.clone(),
-                logs,
-                logs_bloom: logs_bloom.clone(),
-                state_root: self.stateful.root(),
-            };
-
-            block_logs_bloom = block_logs_bloom | logs_bloom;
-            block_used_gas = block_used_gas + used_gas;
-            receipts.push(receipt);
+            valid_transactions.push(valid);
         }
+        let (mut stateful, receipts, block_logs_bloom, block_used_gas) =
+            parallel_execute(stateful, &valid_transactions, HeaderParams::from(&block.header),
+                             patch, &most_recent_block_hashes);
+
+        mem::swap(&mut stateful, &mut self.stateful);
 
         // Apply block rewards
         let basic_rewards = U256::from(5000000000000000000usize);
