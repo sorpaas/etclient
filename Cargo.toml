@@ -1,6 +1,6 @@
 [package]
 name = "etclient"
-version = "0.2.0"
+version = "0.2.1"
 license = "Apache-2.0"
 description = "A light client for Ethereum Classic built on top of SputnikVM and etcommon-worldstate storage."
 authors = ["Wei Tang <hi@that.world>"]
