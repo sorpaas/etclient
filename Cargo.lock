@@ -2,11 +2,11 @@
 name = "etclient"
 version = "0.2.0"
 dependencies = [
- "blockchain 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "devp2p 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "blockchain 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "devp2p 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-block 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "etcommon-block 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bloom 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "blockchain"
-version = "0.1.9"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -101,12 +101,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "devp2p"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "dpt 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-block 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "etcommon-block 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -179,23 +179,10 @@ dependencies = [
 
 [[package]]
 name = "etcommon-block"
-version = "0.2.8"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "blockchain 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-bloom 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "secp256k1-plus 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "sha3 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "etcommon-block"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "blockchain 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "blockchain 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bloom 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -596,7 +583,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "digest 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-block 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "etcommon-block 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -613,7 +600,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "etcommon-block 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "etcommon-block 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-trie 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -763,22 +750,21 @@ dependencies = [
 "checksum arrayvec 0.3.23 (registry+https://github.com/rust-lang/crates.io-index)" = "699e63a93b79d717e8c3b5eb1b28b7780d0d6d9e59a72eb769291c83b0c8dc67"
 "checksum bitflags 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "aad18937a628ec6abcd26d1489012cc0e18c21798210f491af69ded9b881106d"
 "checksum block-buffer 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "1339a1042f5d9f295737ad4d9a6ab6bf81c84a933dba110b9200cd6d1448b814"
-"checksum blockchain 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "7d924c8834c3b8029d794e09a570f9a17c67e3c172accad7468f2d087912c1b5"
+"checksum blockchain 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b25c0f727a410bef0ea87d7437aa403f669ec4d7de1b302f4d819f83d3b4c561"
 "checksum byte-tools 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "560c32574a12a89ecd91f5e742165893f86e3ab98d21f8ea548658eb9eef5f40"
 "checksum byteorder 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ff81738b726f5d099632ceaffe7fb65b90212e8dce59d518729e7e8634032d3d"
 "checksum bytes 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "d828f97b58cc5de3e40c421d0cf2132d6b2da4ee0e11b8632fa838f0f9333ad6"
 "checksum cfg-if 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "d4c819a1287eb618df47cc647173c5c4c66ba19d888a6e50d605672aed3140de"
 "checksum conv 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "78ff10625fd0ac447827aa30ea8b861fead473bb60aeb73af6c1c58caf0d1299"
 "checksum custom_derive 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
-"checksum devp2p 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "763630c387784fcb1243f08ab839c2536b689eec71ad1939afaaf793850a8b13"
+"checksum devp2p 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ca19ad0bf693de7cb9ee59c39930bf99a846694f253b849ace6e7fc32b30393c"
 "checksum digest 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e5b29bf156f3f4b3c4f610a25ff69370616ae6e0657d416de22645483e72af0a"
 "checksum dpt 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "9cb35ef045b79b9864a8cf859521de07743890d96a19d28fc2d3704e110a6a8e"
 "checksum dtoa 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "09c3753c3db574d215cba4ea76018483895d7bff25a31b49ba45db21c48e50ab"
 "checksum elastic-array-plus 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f33b53dfc0d11fdcb338ce6fddbcffd2e1b8adfa8f0746abcab8f870f548822e"
 "checksum env_logger 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "15abd780e45b3ea4f76b4e9a26ff4843258dd8a3eed2775a0e7368c2e7936c2f"
 "checksum etcommon-bigint 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)" = "0c2bdcc389106bdd39737a0957daa0ce55b5f9e9e53b29453d94a317762067b0"
-"checksum etcommon-block 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "8199bb1c6bf1a3628fabe097bca5693a66e0c16d0389fc9e026d180ab20f3e74"
-"checksum etcommon-block 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3a6e32369d31c2a49b285ce651bcbad1708c45a990462637122d517655261b82"
+"checksum etcommon-block 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)" = "eaf2fa384a18d65b6aa8cb29cf69117b398cbe01e8635b8f7c64c84ad9ab86c0"
 "checksum etcommon-bloom 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "43844778eb139dc011f9e11abd509befd4075d42e7f6875a64b7a522511278af"
 "checksum etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c9cdddb19d204a6f0965d5b0ef5e19843d92d6e7cf02dce15cf549013f4f9bb3"
 "checksum etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e8de09f688de9e518d05e9f06fd3eac6c1002c3bc07131e4da9bc298500dc5ad"

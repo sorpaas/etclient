@@ -25,6 +25,7 @@ extern crate url;
 extern crate sha3;
 
 mod validator;
+mod patch;
 
 use validator::Validator;
 use tokio_core::reactor::{Core, Timeout};
@@ -42,7 +43,7 @@ use devp2p::dpt::DPTNode;
 use bigint::{H256, U256, H512};
 use url::Url;
 use sha3::{Digest, Keccak256};
-use block::{Header, Block, Transaction};
+use block::{Header, Block, Transaction, transactions_root, ommers_hash, receipts_root};
 use hexutil::*;
 use blockchain::chain::HeaderHash;
 
@@ -303,8 +304,8 @@ fn main() {
                         println!("received block bodies of len {}", bodies.len());
 
                         for body in bodies {
-                            known_bodies.insert((validator::transactions_root(&body.0),
-                                                 validator::ommers_hash(&body.1)),
+                            known_bodies.insert((transactions_root(&body.0),
+                                                 ommers_hash(&body.1)),
                                                 (body.0.clone(), body.1.clone()));
                         }
                     },

@@ -2,7 +2,7 @@ mod genesis;
 
 use trie::FixedMemoryTrie;
 use bigint::{U256, H256, Gas};
-use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log, TransactionAction};
+use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log, TransactionAction, ommers_hash, transactions_root, receipts_root};
 use bloom::LogsBloom;
 use sha3::{Digest, Keccak256};
 use rlp;
@@ -87,94 +87,125 @@ pub fn calculate_difficulty(
     target
 }
 
-pub fn transactions_root(transactions: &[Transaction]) -> H256 {
-    let mut trie = FixedMemoryTrie::empty(HashMap::new());
-    for (i, transaction) in transactions.iter().enumerate() {
-        trie.insert(U256::from(i), transaction.clone());
-    }
-    trie.root()
-}
-
-pub fn receipts_root(receipts: &[Receipt]) -> H256 {
-    let mut trie = FixedMemoryTrie::empty(HashMap::new());
-    for (i, receipt) in receipts.iter().enumerate() {
-        trie.insert(U256::from(i), receipt.clone());
-    }
-    trie.root()
-}
-
-pub fn ommers_hash(ommers: &[Header]) -> H256 {
-    let encoded = rlp::encode_list(ommers).to_vec();
-    let hash = H256::from(Keccak256::digest(&encoded).as_slice());
-    hash
-}
-
-pub struct Validator {
-    stateful: MemoryStateful,
-    chain: Chain<H256, TotalHeader, HashMap<H256, TotalHeader>>,
-    cache_start: U256,
+pub struct LightDAG {
     cache: Vec<u8>,
+    cache_start: U256,
+    cache_size: usize,
     full_size: usize,
 }
 
-impl Validator {
-    pub fn new() -> Validator {
-        let mut stateful = MemoryStateful::default();
-        genesis::transit_genesis(&mut stateful);
-
-        let genesis = genesis::genesis_block(stateful.root());
-        let chain = Chain::new(TotalHeader::from_genesis(genesis.header));
-
-        let mut validator = Validator {
-            stateful, chain, cache_start: U256::zero(),
-            cache: Vec::new(), full_size: 0,
-        };
-
-        validator.regenerate_dag(U256::zero());
-        validator
-    }
-
-    pub fn regenerate_dag(&mut self, number: U256) {
-        self.cache_start = number - number % U256::from(ethash::EPOCH_LENGTH);
-        let cache_size = ethash::get_cache_size(self.cache_start);
-        let full_size = ethash::get_full_size(self.cache_start);
-        let seed = ethash::get_seedhash(self.cache_start);
+impl LightDAG {
+    pub fn new(number: U256) -> Self {
+        let cache_start = number - number % U256::from(ethash::EPOCH_LENGTH);
+        let cache_size = ethash::get_cache_size(cache_start);
+        let full_size = ethash::get_full_size(cache_start);
+        let seed = ethash::get_seedhash(cache_start);
 
         let mut cache: Vec<u8> = Vec::with_capacity(cache_size);
         cache.resize(cache_size, 0);
         ethash::make_cache(&mut cache, seed);
 
-        self.cache = cache;
-        self.full_size = full_size;
+        Self {
+            cache, cache_start, cache_size, full_size
+        }
     }
 
-    pub fn append_block(&mut self, block: Block) {
-        assert!(self.validate(&block));
-
-        let total = TotalHeader::from_parent(block.header, self.chain.best());
-        self.chain.put(total);
+    pub fn hashimoto(&self, hash: H256, nonce: H64) -> (H256, H256) {
+        ethash::hashimoto_light(hash, nonce, self.full_size, &self.cache)
     }
 
-    pub fn validate(&mut self, block: &Block) -> bool {
-        if block.header.number - self.cache_start >= U256::from(ethash::EPOCH_LENGTH) {
-            self.regenerate_dag(block.header.number);
+    pub fn is_valid_for(&self, number: U256) -> bool {
+        number - self.cache_start < U256::from(ethash::EPOCH_LENGTH)
+    }
+}
+
+pub struct EthereumProcessor {
+    database: MemoryDatabase,
+    chain: Chain<H256, TotalHeader, HashMap<H256, TotalHeader>>,
+    dag: LightDAG,
+}
+
+impl EthereumProcessor {
+    pub fn new(genesis: Header) -> Self {
+        Self {
+            database: MemoryDatabase::default(),
+            chain: Chain::new(TotalHeader::from_genesis(genesis)),
+            dag: LightDAG::new(U256::zero()),
+        }
+    }
+
+    pub fn put(&mut self, block: Block) -> bool {
+        let parent = match self.chain.fetch(block.header.parent_hash) {
+            Some(val) => val.clone(),
+            None => return false,
+        };
+        let most_recent_block_hashes = self.chain.last_hashes(256);
+        if !self.dag.is_valid_for(block.header.number) {
+            self.dag = LightDAG::new(block.header.number);
         }
 
-        let basic = self.validate_basic(block);
-        let timestamp_and_difficulty = self.validate_timestamp_and_difficulty(&block.header);
-        let consensus = self.validate_consensus(&block.header);
-        let gas_limit = self.validate_gas_limit(&block.header);
-        let state = self.validate_state(block);
+        let validator: Box<Validator> = if block.number < U256::from(1150000) {
+            Box::new(EthereumValidator::<FrontierPatch>::new(
+                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
+        } else if block.number < U256::from(2500000) {
+            Box::new(EthereumValidator::<HomesteadPatch>::new(
+                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
+        } else if block.number < U256::from(3000000) {
+            Box::new(EthereumValidator::<EIP150Patch>::new(
+                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
+        } else {
+            Box::new(EthereumValidator::<EIP160Patch>::new(
+                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
+        };
+
+        if !validator.validate() {
+            return false;
+        }
+
+        self.chain.put(TotalHeader::from_parent(block.header, &parent))
+    }
+}
+
+pub trait Validator {
+    fn validate(&mut self) -> bool;
+}
+
+pub struct EthereumValidator<'a, P: Patch> {
+    database: &'a MemoryDatabase,
+    dag: &'a LightDAG,
+    current_block: &'a Block,
+    parent_header: &'a Header,
+    most_recent_block_hashes: &'a [u8],
+}
+
+impl<'a, P: Patch> Validator for EthereumValidator<'a, P> {
+    fn validate(&mut self) -> bool {
+        let basic = self.validate_basic();
+        let timestamp_and_difficulty = self.validate_timestamp_and_difficulty();
+        let consensus = self.validate_consensus();
+        let gas_limit = self.validate_gas_limit();
+        let state = self.validate_state();
 
         basic && timestamp_and_difficulty && consensus && gas_limit && state
     }
+}
 
-    pub fn validate_consensus(&self, header: &Header) -> bool {
-        assert!(header.number - self.cache_start < U256::from(ethash::EPOCH_LENGTH));
-        let partial = PartialHeader::from_full(header.clone());
+impl<'a, P: Patch> EthereumValidator<'a, P> {
+    pub fn new(current_block: &'a Block, parent_block: &'a Block,
+               database: &'a MemoryDatabase, dag: &'a LightDAG,
+               most_recent_block_hashes: &'a [u8]) -> Self {
+        assert!(dag.is_valid_for(current_block.header.number));
+        assert!(U256::from(most_recent_block_hashes.len()) >=
+                min(current_block.header.number, U256::from(256)));
 
-        let (mix_hash, result) = ethash::hashimoto_light(&partial, header.nonce,
-                                                         self.full_size, &self.cache);
+        Self {
+            database, dag, current_block, parent_block, most_recent_block_hashes
+        }
+    }
+
+    pub fn validate_consensus(&self) -> bool {
+        let (mix_hash, result) = self.dag.hashimoto(self.current_block.header.partial_hash(),
+                                                    self.current_block.header.nonce);
         let nonce_value: u64 = header.nonce.into();
 
         mix_hash == header.mix_hash &&
@@ -182,50 +213,36 @@ impl Validator {
     }
 
     pub fn validate_basic(&self, block: &Block) -> bool {
-        block.header.parent_hash() == self.chain.best().0.header_hash() &&
-            block.header.number == self.chain.best().0.number + U256::one() &&
-            block.header.transactions_root == transactions_root(&block.transactions) &&
-            block.header.ommers_hash == ommers_hash(&block.ommers)
+        self.current_block.is_basic_valid() &&
+            self.current_block.header.parent_hash() == self.parent_block.header.header_hash() &&
+            self.current_block.header.number == self.parent_block.header.number + U256::one()
     }
 
     pub fn validate_timestamp_and_difficulty(&self, header: &Header) -> bool {
-        header.timestamp > self.chain.best().0.timestamp &&
-            header.difficulty == calculate_difficulty(self.chain.best().0.difficulty,
-                                                      self.chain.best().0.timestamp,
-                                                      header.number, header.timestamp)
+        self.current_block.header.timestamp > self.parent_block.header.timestamp &&
+            self.current_block.header.difficulty == calculate_difficulty(
+                self.parent_block.header.difficulty, self.parent_block.header.timestamp,
+                self.current_block.header.number, self.current_block.header.timestamp)
     }
 
     pub fn validate_gas_limit(&self, header: &Header) -> bool {
-        let parent_gas_limit = self.chain.best().0.gas_limit;
-
-        validate_gas_limit(parent_gas_limit, header.gas_limit)
+        validate_gas_limit(self.parent_block.header.gas_limit, self.current_block.header.gas_limit)
     }
 
     pub fn validate_state(&mut self, block: &Block) -> bool {
-        let patch = patch(block.header.number);
-        let mut most_recent_block_hashes = Vec::new();
-        let mut next_hash = self.chain.best().header_hash();
-        for _ in 0..256 {
-            most_recent_block_hashes.push(next_hash);
-
-            if next_hash == H256::default() {
-                break;
-            }
-            let this_block = self.chain.fetch(next_hash).unwrap();
-            next_hash = this_block.parent_hash();
-        }
-
         let mut receipts = Vec::new();
         let mut block_logs_bloom = LogsBloom::new();
         let mut block_used_gas = Gas::zero();
+
+        let mut stateful = MemoryStateful::new(self.database, self.parent_block.header.state_root);
 
         for transaction in &block.transactions {
             let valid = match self.stateful.to_valid(transaction.clone(), patch) {
                 Ok(val) => val,
                 Err(_) => return false,
             };
-            let vm: SeqTransactionVM = self.stateful.execute(
-                valid, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
+            let vm: SeqTransactionVM = stateful.execute(
+                valid, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
 
             let logs: Vec<Log> = vm.logs().into();
             let used_gas = vm.real_used_gas();
@@ -252,7 +269,7 @@ impl Validator {
         // Apply block rewards
         let basic_rewards = U256::from(5000000000000000000usize);
         let main_rewards = basic_rewards + basic_rewards * U256::from(block.ommers.len()) / U256::from(32usize);
-        let vm: SeqTransactionVM = self.stateful.execute(
+        let vm: SeqTransactionVM = stateful.execute(
             ValidTransaction {
                 caller: None,
                 gas_price: Gas::zero(),
@@ -261,11 +278,11 @@ impl Validator {
                 value: main_rewards,
                 input: Vec::new(),
                 nonce: U256::zero(),
-            }, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
+            }, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
 
         for uncle in &block.ommers {
             let sub_rewards = basic_rewards - basic_rewards * (block.header.number - uncle.number) / U256::from(8usize);
-            let vm: SeqTransactionVM = self.stateful.execute(
+            let vm: SeqTransactionVM = stateful.execute(
             ValidTransaction {
                 caller: None,
                 gas_price: Gas::zero(),
@@ -274,13 +291,13 @@ impl Validator {
                 value: sub_rewards,
                 input: Vec::new(),
                 nonce: U256::zero(),
-            }, HeaderParams::from(&block.header), patch, &most_recent_block_hashes);
+            }, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
         }
 
-        block.header.state_root == self.stateful.root() &&
-            block.header.receipts_root == receipts_root(&receipts) &&
-            block.header.logs_bloom == block_logs_bloom &&
-            block.header.gas_used == block_used_gas
+        self.current_block.header.state_root == stateful.root() &&
+            self.current_block.header.receipts_root == receipts_root(&receipts) &&
+            self.current_block.header.logs_bloom == block_logs_bloom &&
+            self.current_block.header.gas_used == block_used_gas
     }
 }
 
