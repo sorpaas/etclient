@@ -27,7 +27,7 @@ extern crate sha3;
 mod validator;
 mod patch;
 
-use validator::Validator;
+use validator::EthereumProcessor;
 use tokio_core::reactor::{Core, Timeout};
 use secp256k1::SECP256K1;
 use secp256k1::key::{PublicKey, SecretKey};
@@ -83,7 +83,7 @@ const BOOTSTRAP_NODES: [&str; 10] = [
 // ];
 
 fn find_and_validate(
-    validator: &mut Validator, validated_number: U256, headers: &[Header], bodies: &HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)>
+    processor: &mut EthereumProcessor, validated_number: U256, headers: &[Header], bodies: &HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)>
 ) -> U256 {
     let mut validated_number = validated_number.as_usize();
     if validated_number >= headers.len() { return U256::from(validated_number); }
@@ -99,7 +99,7 @@ fn find_and_validate(
                 ommers: body.1.clone(),
             };
             println!("validating block {:?} ...", block);
-            validator.append_block(block);
+            assert!(processor.put(block));
             validated_number += 1;
         } else {
             println!("block body not yet found: {}", validated_number);
@@ -141,7 +141,7 @@ fn main() {
     let mut validated_number: U256 = U256::zero();
     let mut known_headers: Vec<Header> = Vec::new();
     let mut known_bodies: HashMap<(H256, H256), (Vec<Transaction>, Vec<Header>)> = HashMap::new();
-    let mut validator: Validator = Validator::new();
+    let mut processor: EthereumProcessor = EthereumProcessor::new();
 
     let mut got_bodies_for_current = true;
 
@@ -196,7 +196,7 @@ fn main() {
                 })).unwrap();
 
                 validated_number = find_and_validate(
-                    &mut validator, validated_number, &known_headers, &known_bodies);
+                    &mut processor, validated_number, &known_headers, &known_bodies);
 
                 timeout = Timeout::new(dur, &handle).unwrap().boxed();
 
@@ -295,7 +295,7 @@ fn main() {
                         })).unwrap();
 
                         validated_number = find_and_validate(
-                            &mut validator, validated_number, &known_headers, &known_bodies);
+                            &mut processor, validated_number, &known_headers, &known_bodies);
 
                         timeout = Timeout::new(dur, &handle).unwrap().boxed();
                     },

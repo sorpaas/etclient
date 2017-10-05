@@ -1,7 +1,7 @@
-use sputnikvm::vm::{VMStatus, HeaderParams, ValidTransaction, VM, SeqTransactionVM, FRONTIER_PATCH};
+use sputnikvm::{VMStatus, HeaderParams, ValidTransaction, VM, SeqTransactionVM, FrontierPatch};
 use sputnikvm_stateful::{Stateful, MemoryStateful};
 use bigint::{H256, H64, B256, Gas, U256, Address};
-use block::{Header, Block, TotalHeader, PartialHeader, Transaction, TransactionAction};
+use block::{Header, Block, TotalHeader, Transaction, TransactionAction};
 use trie::{DatabaseGuard, DatabaseOwned, MemoryTrie};
 use hexutil::*;
 use rlp;
@@ -12,7 +12,7 @@ use sha3::{Digest, Keccak256};
 use std::str::FromStr;
 use std::collections::HashMap;
 
-pub fn genesis_block(state_root: H256) -> Block {
+pub fn genesis_header(state_root: H256) -> Header {
     let extra_data = read_hex("11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa").unwrap();
     let ommers: Vec<Header> = Vec::new();
 
@@ -34,11 +34,7 @@ pub fn genesis_block(state_root: H256) -> Block {
         mix_hash: H256::default(),
     };
 
-    Block {
-        header,
-        transactions: Vec::new(),
-        ommers: Vec::new()
-    }
+    header
 }
 
 pub fn transit_genesis<D: DatabaseOwned>(stateful: &mut Stateful<D>) {
@@ -55,7 +51,7 @@ pub fn transit_genesis<D: DatabaseOwned>(stateful: &mut Stateful<D>) {
         let address = Address::from_str(key).unwrap();
         let balance = U256::from_dec_str(&value.balance).unwrap();
 
-        let vm: SeqTransactionVM = stateful.execute(ValidTransaction {
+        let vm: SeqTransactionVM<FrontierPatch> = stateful.execute(ValidTransaction {
             caller: None,
             gas_price: Gas::zero(),
             gas_limit: Gas::from(1000000usize),
@@ -69,7 +65,7 @@ pub fn transit_genesis<D: DatabaseOwned>(stateful: &mut Stateful<D>) {
             number: U256::zero(),
             difficulty: U256::from(0x400000000usize),
             gas_limit: Gas::from(0x1388usize)
-        }, &FRONTIER_PATCH, &[]);
+        }, &[]);
         match vm.status() {
             VMStatus::ExitedOk => (),
             _ => panic!(),

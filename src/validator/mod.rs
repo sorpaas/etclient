@@ -1,30 +1,20 @@
 mod genesis;
 
-use trie::FixedMemoryTrie;
-use bigint::{U256, H256, Gas};
-use block::{Header, Receipt, TotalHeader, PartialHeader, Transaction, Block, Log, TransactionAction, ommers_hash, transactions_root, receipts_root};
+use trie::{MemoryDatabase, FixedMemoryTrie};
+use bigint::{U256, H256, H64, Gas};
+use block::{Header, Receipt, TotalHeader, Transaction, Block, Log, TransactionAction, ommers_hash, transactions_root, receipts_root};
 use bloom::LogsBloom;
 use sha3::{Digest, Keccak256};
 use rlp;
 use ethash;
 use blockchain::chain::{HeaderHash, Chain};
-use sputnikvm::vm::{self, Patch, HeaderParams, VM, SeqTransactionVM, ValidTransaction};
+use sputnikvm::{HeaderParams, VM, SeqTransactionVM, ValidTransaction};
 use sputnikvm_stateful::MemoryStateful;
+use patch::*;
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::cmp::{min, max};
-
-pub fn patch(number: U256) -> &'static Patch {
-    if number < U256::from(1150000) {
-        &vm::FRONTIER_PATCH
-    } else if number < U256::from(2500000) {
-        &vm::HOMESTEAD_PATCH
-    } else if number < U256::from(3000000) {
-        &vm::EIP150_PATCH
-    } else {
-        &vm::EIP160_PATCH
-    }
-}
 
 pub fn validate_gas_limit(last_gas_limit: Gas, this_gas_limit: Gas) -> bool {
     let lower_bound = last_gas_limit - last_gas_limit / Gas::from(1024u64);
@@ -126,9 +116,17 @@ pub struct EthereumProcessor {
 }
 
 impl EthereumProcessor {
-    pub fn new(genesis: Header) -> Self {
+    pub fn new() -> Self {
+        let database = MemoryDatabase::default();
+
+        let genesis = {
+            let mut stateful = MemoryStateful::empty(&database);
+            genesis::transit_genesis(&mut stateful);
+            genesis::genesis_header(stateful.root())
+        };
+
         Self {
-            database: MemoryDatabase::default(),
+            database,
             chain: Chain::new(TotalHeader::from_genesis(genesis)),
             dag: LightDAG::new(U256::zero()),
         }
@@ -144,22 +142,24 @@ impl EthereumProcessor {
             self.dag = LightDAG::new(block.header.number);
         }
 
-        let validator: Box<Validator> = if block.number < U256::from(1150000) {
-            Box::new(EthereumValidator::<FrontierPatch>::new(
-                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
-        } else if block.number < U256::from(2500000) {
-            Box::new(EthereumValidator::<HomesteadPatch>::new(
-                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
-        } else if block.number < U256::from(3000000) {
-            Box::new(EthereumValidator::<EIP150Patch>::new(
-                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
-        } else {
-            Box::new(EthereumValidator::<EIP160Patch>::new(
-                &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes));
-        };
+        {
+            let mut validator: Box<Validator> = if block.header.number < U256::from(1150000) {
+                Box::new(EthereumValidator::<FrontierPatch>::new(
+                    &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
+            } else if block.header.number < U256::from(2500000) {
+                Box::new(EthereumValidator::<HomesteadPatch>::new(
+                    &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
+            } else if block.header.number < U256::from(3000000) {
+                Box::new(EthereumValidator::<EIP150Patch>::new(
+                    &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
+            } else {
+                Box::new(EthereumValidator::<EIP160Patch>::new(
+                    &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
+            };
 
-        if !validator.validate() {
-            return false;
+            if !validator.validate() {
+                return false;
+            }
         }
 
         self.chain.put(TotalHeader::from_parent(block.header, &parent))
@@ -175,7 +175,8 @@ pub struct EthereumValidator<'a, P: Patch> {
     dag: &'a LightDAG,
     current_block: &'a Block,
     parent_header: &'a Header,
-    most_recent_block_hashes: &'a [u8],
+    most_recent_block_hashes: &'a [H256],
+    _marker: PhantomData<P>,
 }
 
 impl<'a, P: Patch> Validator for EthereumValidator<'a, P> {
@@ -191,58 +192,74 @@ impl<'a, P: Patch> Validator for EthereumValidator<'a, P> {
 }
 
 impl<'a, P: Patch> EthereumValidator<'a, P> {
-    pub fn new(current_block: &'a Block, parent_block: &'a Block,
+    pub fn new(current_block: &'a Block, parent_header: &'a Header,
                database: &'a MemoryDatabase, dag: &'a LightDAG,
-               most_recent_block_hashes: &'a [u8]) -> Self {
+               most_recent_block_hashes: &'a [H256]) -> Self {
         assert!(dag.is_valid_for(current_block.header.number));
         assert!(U256::from(most_recent_block_hashes.len()) >=
                 min(current_block.header.number, U256::from(256)));
 
         Self {
-            database, dag, current_block, parent_block, most_recent_block_hashes
+            database, dag, current_block, parent_header, most_recent_block_hashes,
+            _marker: PhantomData,
         }
     }
 
     pub fn validate_consensus(&self) -> bool {
         let (mix_hash, result) = self.dag.hashimoto(self.current_block.header.partial_hash(),
                                                     self.current_block.header.nonce);
-        let nonce_value: u64 = header.nonce.into();
+        let nonce_value: u64 = self.current_block.header.nonce.into();
 
-        mix_hash == header.mix_hash &&
-            U256::from(nonce_value) <= ethash::cross_boundary(header.difficulty)
+        mix_hash == self.current_block.header.mix_hash &&
+            U256::from(nonce_value) <= ethash::cross_boundary(self.current_block.header.difficulty)
     }
 
-    pub fn validate_basic(&self, block: &Block) -> bool {
+    pub fn validate_basic(&self) -> bool {
+        if self.current_block.header.parent_hash().is_none() {
+            return false;
+        }
+
+        let transactions_valid = {
+            let mut transactions_valid = true;
+
+            for transaction in &self.current_block.transactions {
+                transactions_valid = transactions_valid && transaction.is_basic_valid::<P::Signature, P::TransactionValidation>();
+            }
+
+            transactions_valid
+        };
+
         self.current_block.is_basic_valid() &&
-            self.current_block.header.parent_hash() == self.parent_block.header.header_hash() &&
-            self.current_block.header.number == self.parent_block.header.number + U256::one()
+            transactions_valid &&
+            self.current_block.header.parent_hash().unwrap() == self.parent_header.header_hash() &&
+            self.current_block.header.number == self.parent_header.number + U256::one()
     }
 
-    pub fn validate_timestamp_and_difficulty(&self, header: &Header) -> bool {
-        self.current_block.header.timestamp > self.parent_block.header.timestamp &&
+    pub fn validate_timestamp_and_difficulty(&self) -> bool {
+        self.current_block.header.timestamp > self.parent_header.timestamp &&
             self.current_block.header.difficulty == calculate_difficulty(
-                self.parent_block.header.difficulty, self.parent_block.header.timestamp,
+                self.parent_header.difficulty, self.parent_header.timestamp,
                 self.current_block.header.number, self.current_block.header.timestamp)
     }
 
-    pub fn validate_gas_limit(&self, header: &Header) -> bool {
-        validate_gas_limit(self.parent_block.header.gas_limit, self.current_block.header.gas_limit)
+    pub fn validate_gas_limit(&self) -> bool {
+        validate_gas_limit(self.parent_header.gas_limit, self.current_block.header.gas_limit)
     }
 
-    pub fn validate_state(&mut self, block: &Block) -> bool {
+    pub fn validate_state(&mut self) -> bool {
         let mut receipts = Vec::new();
         let mut block_logs_bloom = LogsBloom::new();
         let mut block_used_gas = Gas::zero();
 
-        let mut stateful = MemoryStateful::new(self.database, self.parent_block.header.state_root);
+        let mut stateful = MemoryStateful::new(self.database, self.parent_header.state_root);
 
-        for transaction in &block.transactions {
-            let valid = match self.stateful.to_valid(transaction.clone(), patch) {
+        for transaction in &self.current_block.transactions {
+            let valid = match stateful.to_valid::<P::VM>(transaction.clone()) {
                 Ok(val) => val,
                 Err(_) => return false,
             };
-            let vm: SeqTransactionVM = stateful.execute(
-                valid, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
+            let vm: SeqTransactionVM<P::VM> = stateful.execute(
+                valid, HeaderParams::from(&self.current_block.header), &self.most_recent_block_hashes);
 
             let logs: Vec<Log> = vm.logs().into();
             let used_gas = vm.real_used_gas();
@@ -258,7 +275,7 @@ impl<'a, P: Patch> EthereumValidator<'a, P> {
                 used_gas: used_gas.clone(),
                 logs,
                 logs_bloom: logs_bloom.clone(),
-                state_root: self.stateful.root(),
+                state_root: stateful.root(),
             };
 
             block_logs_bloom = block_logs_bloom | logs_bloom;
@@ -268,30 +285,30 @@ impl<'a, P: Patch> EthereumValidator<'a, P> {
 
         // Apply block rewards
         let basic_rewards = U256::from(5000000000000000000usize);
-        let main_rewards = basic_rewards + basic_rewards * U256::from(block.ommers.len()) / U256::from(32usize);
-        let vm: SeqTransactionVM = stateful.execute(
+        let main_rewards = basic_rewards + basic_rewards * U256::from(self.current_block.ommers.len()) / U256::from(32usize);
+        let vm: SeqTransactionVM<P::VM> = stateful.execute(
             ValidTransaction {
                 caller: None,
                 gas_price: Gas::zero(),
                 gas_limit: Gas::from(1000000usize),
-                action: TransactionAction::Call(block.header.beneficiary),
+                action: TransactionAction::Call(self.current_block.header.beneficiary),
                 value: main_rewards,
                 input: Vec::new(),
                 nonce: U256::zero(),
-            }, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
+            }, HeaderParams::from(&self.current_block.header), &self.most_recent_block_hashes);
 
-        for uncle in &block.ommers {
-            let sub_rewards = basic_rewards - basic_rewards * (block.header.number - uncle.number) / U256::from(8usize);
-            let vm: SeqTransactionVM = stateful.execute(
-            ValidTransaction {
-                caller: None,
-                gas_price: Gas::zero(),
-                gas_limit: Gas::from(1000000usize),
-                action: TransactionAction::Call(uncle.beneficiary),
-                value: sub_rewards,
-                input: Vec::new(),
-                nonce: U256::zero(),
-            }, HeaderParams::from(&block.header), patch, &self.most_recent_block_hashes);
+        for uncle in &self.current_block.ommers {
+            let sub_rewards = basic_rewards - basic_rewards * (self.current_block.header.number - uncle.number) / U256::from(8usize);
+            let vm: SeqTransactionVM<P::VM> = stateful.execute(
+                ValidTransaction {
+                    caller: None,
+                    gas_price: Gas::zero(),
+                    gas_limit: Gas::from(1000000usize),
+                    action: TransactionAction::Call(uncle.beneficiary),
+                    value: sub_rewards,
+                    input: Vec::new(),
+                    nonce: U256::zero(),
+                }, HeaderParams::from(&self.current_block.header), &self.most_recent_block_hashes);
         }
 
         self.current_block.header.state_root == stateful.root() &&

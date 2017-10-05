@@ -2,9 +2,9 @@ use sputnikvm;
 use block;
 
 pub trait Patch {
-    type VM;
-    type Signature;
-    type TransactionValidation;
+    type VM: sputnikvm::Patch;
+    type Signature: block::SignaturePatch;
+    type TransactionValidation: block::ValidationPatch;
 }
 
 pub struct FrontierPatch;
