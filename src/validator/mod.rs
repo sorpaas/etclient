@@ -24,56 +24,19 @@ pub fn validate_gas_limit(last_gas_limit: Gas, this_gas_limit: Gas) -> bool {
         this_gas_limit >= Gas::from(5000u64)
 }
 
-pub fn calculate_difficulty(
+pub fn calculate_difficulty<Base: BaseTargetDifficultyPatch, Bomb: DifficultyBombPatch>(
     last_difficulty: U256, last_timestamp: u64, this_number: U256, this_timestamp: u64
 ) -> U256 {
-    let exp_diff_period = U256::from(100000);
-
     let min_difficulty = U256::from(125000);
     let difficulty_bound_divisor = U256::from(0x0800);
 
     let duration_limit = 0x0d;
     let frontier_limit = U256::from(1150000);
 
-    let mut target = if this_number < frontier_limit {
-        if this_timestamp >= last_timestamp + duration_limit {
-            last_difficulty - (last_difficulty / difficulty_bound_divisor)
-        } else {
-            last_difficulty + (last_difficulty / difficulty_bound_divisor)
-        }
-    } else {
-        let increment_divisor = 10;
-        let threshold = 1;
-
-        let diff_inc = (this_timestamp - last_timestamp) / increment_divisor;
-        if diff_inc <= threshold {
-            last_difficulty +
-                last_difficulty / difficulty_bound_divisor * (threshold - diff_inc).into()
-        } else {
-            let multiplier = min(diff_inc - threshold, 99).into();
-            last_difficulty.saturating_sub(
-                last_difficulty / difficulty_bound_divisor * multiplier
-            )
-        }
-    };
+    let mut target = Base::base_target_difficulty(last_difficulty, last_timestamp, this_timestamp);
     target = max(min_difficulty, target);
+    target = max(min_difficulty, target + Bomb::difficulty_bomb(this_number));
 
-    let ecip1010_pause_transition = U256::from(3000000);
-    let ecip1010_continue_transition = U256::from(5000000);
-
-    if this_number < ecip1010_pause_transition {
-        let period = (this_number / exp_diff_period).as_usize();
-        if period > 1 {
-            target = max(min_difficulty, target + (U256::from(1) << (period - 2)));
-        }
-    } else if this_number < ecip1010_continue_transition {
-        let fixed_difficulty = ((ecip1010_pause_transition / exp_diff_period) - U256::from(2)).as_usize();
-        target = max(min_difficulty, target + (U256::from(1) << fixed_difficulty));
-    } else {
-        let period = (this_number / exp_diff_period).as_usize();
-        let delay = ((ecip1010_continue_transition - ecip1010_pause_transition) / exp_diff_period).as_usize();
-        target = max(min_difficulty, target + (U256::from(1) << (period - delay - 2)));
-    }
     target
 }
 
@@ -205,9 +168,10 @@ impl<'a, P: Patch> EthereumValidator<'a, P> {
 
     pub fn validate_timestamp_and_difficulty(&self) -> bool {
         self.current_block.header.timestamp > self.parent_header.timestamp &&
-            self.current_block.header.difficulty == calculate_difficulty(
-                self.parent_header.difficulty, self.parent_header.timestamp,
-                self.current_block.header.number, self.current_block.header.timestamp)
+            self.current_block.header.difficulty == calculate_difficulty::<
+                    P::BaseTargetDifficulty, P::DifficultyBomb>(
+                        self.parent_header.difficulty, self.parent_header.timestamp,
+                        self.current_block.header.number, self.current_block.header.timestamp)
     }
 
     pub fn validate_gas_limit(&self) -> bool {
