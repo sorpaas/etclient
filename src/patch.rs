@@ -33,14 +33,6 @@ impl Patch for EIP150Patch {
     type Ethash = ethash::EthereumPatch;
 }
 
-pub struct EIP155Patch;
-impl Patch for EIP155Patch {
-    type VM = sputnikvm::EIP150Patch;
-    type Signature = block::ClassicSignaturePatch;
-    type TransactionValidation = block::HomesteadValidationPatch;
-    type Ethash = ethash::EthereumPatch;
-}
-
 pub struct EIP160Patch;
 impl Patch for EIP160Patch {
     type VM = sputnikvm::EIP160Patch;
