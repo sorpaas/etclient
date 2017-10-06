@@ -6,7 +6,7 @@ use block::{Header, Receipt, TotalHeader, Transaction, Block, Log, TransactionAc
 use bloom::LogsBloom;
 use sha3::{Digest, Keccak256};
 use rlp;
-use ethash;
+use ethash::{self, cross_boundary, LightDAG};
 use blockchain::chain::{HeaderHash, Chain};
 use sputnikvm::{HeaderParams, VM, SeqTransactionVM, ValidTransaction};
 use sputnikvm_stateful::MemoryStateful;
@@ -77,42 +77,10 @@ pub fn calculate_difficulty(
     target
 }
 
-pub struct LightDAG {
-    cache: Vec<u8>,
-    cache_start: U256,
-    cache_size: usize,
-    full_size: usize,
-}
-
-impl LightDAG {
-    pub fn new(number: U256) -> Self {
-        let cache_start = number - number % U256::from(ethash::EPOCH_LENGTH);
-        let cache_size = ethash::get_cache_size(cache_start);
-        let full_size = ethash::get_full_size(cache_start);
-        let seed = ethash::get_seedhash(cache_start);
-
-        let mut cache: Vec<u8> = Vec::with_capacity(cache_size);
-        cache.resize(cache_size, 0);
-        ethash::make_cache(&mut cache, seed);
-
-        Self {
-            cache, cache_start, cache_size, full_size
-        }
-    }
-
-    pub fn hashimoto(&self, hash: H256, nonce: H64) -> (H256, H256) {
-        ethash::hashimoto_light(hash, nonce, self.full_size, &self.cache)
-    }
-
-    pub fn is_valid_for(&self, number: U256) -> bool {
-        number - self.cache_start < U256::from(ethash::EPOCH_LENGTH)
-    }
-}
-
 pub struct EthereumProcessor {
     database: MemoryDatabase,
     chain: Chain<H256, TotalHeader, HashMap<H256, TotalHeader>>,
-    dag: LightDAG,
+    dag: LightDAG<ethash::EthereumPatch>,
 }
 
 impl EthereumProcessor {
@@ -170,9 +138,9 @@ pub trait Validator {
     fn validate(&mut self) -> bool;
 }
 
-pub struct EthereumValidator<'a, P: Patch> {
+pub struct EthereumValidator<'a, P: Patch + 'static> {
     database: &'a MemoryDatabase,
-    dag: &'a LightDAG,
+    dag: &'a LightDAG<P::Ethash>,
     current_block: &'a Block,
     parent_header: &'a Header,
     most_recent_block_hashes: &'a [H256],
@@ -193,7 +161,7 @@ impl<'a, P: Patch> Validator for EthereumValidator<'a, P> {
 
 impl<'a, P: Patch> EthereumValidator<'a, P> {
     pub fn new(current_block: &'a Block, parent_header: &'a Header,
-               database: &'a MemoryDatabase, dag: &'a LightDAG,
+               database: &'a MemoryDatabase, dag: &'a LightDAG<P::Ethash>,
                most_recent_block_hashes: &'a [H256]) -> Self {
         assert!(dag.is_valid_for(current_block.header.number));
         assert!(U256::from(most_recent_block_hashes.len()) >=
@@ -211,7 +179,7 @@ impl<'a, P: Patch> EthereumValidator<'a, P> {
         let nonce_value: u64 = self.current_block.header.nonce.into();
 
         mix_hash == self.current_block.header.mix_hash &&
-            U256::from(nonce_value) <= ethash::cross_boundary(self.current_block.header.difficulty)
+            U256::from(nonce_value) <= cross_boundary(self.current_block.header.difficulty)
     }
 
     pub fn validate_basic(&self) -> bool {

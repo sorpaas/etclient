@@ -11,7 +11,7 @@ dependencies = [
  "etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "etcommon-trie 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "ethash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethash 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "secp256k1-plus 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "ethash"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "byteorder 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -769,7 +769,7 @@ dependencies = [
 "checksum etcommon-hexutil 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c9cdddb19d204a6f0965d5b0ef5e19843d92d6e7cf02dce15cf549013f4f9bb3"
 "checksum etcommon-rlp 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e8de09f688de9e518d05e9f06fd3eac6c1002c3bc07131e4da9bc298500dc5ad"
 "checksum etcommon-trie 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)" = "6a9a1225e7281777356e3f4175ade675ecfa3cf1ae8e0faa6bc2b1dbf8ac16b4"
-"checksum ethash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9b1fcd1f165695224645d485b26630d1638bddc7ef6fc433c2e8eb5474715de7"
+"checksum ethash 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "25d9dc62e5b549b15791a4c3a296360c49078ed2225f6d0c3096989eb7732a39"
 "checksum fake-simd 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
 "checksum futures 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "05a23db7bd162d4e8265968602930c476f688f0c180b44bdaf55e0cb2c687558"
 "checksum gcc 0.3.54 (registry+https://github.com/rust-lang/crates.io-index)" = "5e33ec290da0d127825013597dbdfc28bee4964690c7ce1166cbc2a7bd08b1bb"
