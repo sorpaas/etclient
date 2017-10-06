@@ -255,11 +255,15 @@ mod tests {
 
     #[test]
     fn test_calculate_difficulty() {
-        assert_eq!(calculate_difficulty(U256::from(17179869184usize), 0,
-                                        U256::from(1), 1438269988),
+        assert_eq!(calculate_difficulty::<
+                   FrontierBaseTargetDifficultyPatch, FrontierDifficultyBombPatch
+                   >(U256::from(17179869184usize), 0,
+                     U256::from(1), 1438269988),
                    U256::from(17171480576usize));
-        assert_eq!(calculate_difficulty(U256::from(17171480576usize), 1438269988,
-                                        U256::from(2), 1438270017),
+        assert_eq!(calculate_difficulty::<
+                   FrontierBaseTargetDifficultyPatch, FrontierDifficultyBombPatch
+                   >(U256::from(17171480576usize), 1438269988,
+                     U256::from(2), 1438270017),
                    U256::from(17163096064usize));
     }
 }
