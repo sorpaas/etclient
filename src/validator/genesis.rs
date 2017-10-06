@@ -76,15 +76,18 @@ pub fn transit_genesis<D: DatabaseOwned>(stateful: &mut Stateful<D>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use trie::MemoryDatabase;
     use ethash;
     use blockchain::chain::HeaderHash;
 
     #[test]
     fn mainnet_genesis_block() {
-        let mut stateful = MemoryStateful::default();
+        let database = MemoryDatabase::default();
+
+        let mut stateful = MemoryStateful::empty(&database);
         transit_genesis(&mut stateful);
 
-        let genesis = genesis_block(stateful.root());
-        assert_eq!(genesis.header.header_hash(), H256::from_str("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3").unwrap());
+        let genesis = genesis_header(stateful.root());
+        assert_eq!(genesis.header_hash(), H256::from_str("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3").unwrap());
     }
 }
