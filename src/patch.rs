@@ -3,8 +3,63 @@ use block;
 use ethash;
 
 use bigint::U256;
+use std::ops::Shr;
 use std::cmp::min;
 use std::marker::PhantomData;
+
+pub trait BaseRewardPatch {
+    fn base_reward() -> U256;
+}
+
+pub struct EthereumBaseRewardPatch;
+impl BaseRewardPatch for EthereumBaseRewardPatch {
+    fn base_reward() -> U256 { U256::from(5000000000000000000usize) }
+}
+
+pub trait RewardPatch {
+    fn block_reward(number: U256, uncles: usize) -> U256;
+    fn uncle_reward(distance: U256) -> U256;
+}
+
+pub struct FrontierRewardPatch<P: BaseRewardPatch>(PhantomData<P>);
+impl<P: BaseRewardPatch> RewardPatch for FrontierRewardPatch<P> {
+    fn block_reward(number: U256, uncles: usize) -> U256 { P::base_reward() + P::base_reward().shr(5) * U256::from(uncles) }
+    fn uncle_reward(distance: U256) -> U256 {
+        (P::base_reward() * (U256::from(8) - distance)).shr(3)
+    }
+}
+
+fn era(block_number: U256, era_rounds: U256) -> usize {
+    if block_number != U256::zero() && block_number % era_rounds == U256::zero() {
+		(block_number / era_rounds - U256::one()).as_usize()
+	} else {
+		(block_number / era_rounds).as_usize()
+    }
+}
+
+pub trait EraPatch {
+    fn era_rounds() -> U256;
+}
+
+pub struct ClassicEraPatch;
+impl EraPatch for ClassicEraPatch {
+    fn era_rounds() -> U256 { U256::from(5000000) }
+}
+
+pub struct EraReducedRewardPatch<B: BaseRewardPatch, E: EraPatch>(PhantomData<(B, E)>);
+impl<B: BaseRewardPatch, E: EraPatch> RewardPatch for EraReducedRewardPatch<B, E> {
+    fn block_reward(number: U256, uncles: usize) -> U256 {
+        let mut reward = B::base_reward();
+        for _ in 0..era(number, E::era_rounds()) {
+            reward = reward / U256::from(5) * U256::from(4);
+        }
+        reward
+    }
+
+    fn uncle_reward(distance: U256) -> U256 {
+        B::base_reward().shr(5)
+    }
+}
 
 pub trait BaseTargetDifficultyPatch {
     fn base_target_difficulty(
@@ -110,6 +165,7 @@ pub trait Patch {
     type Ethash: ethash::Patch;
     type BaseTargetDifficulty: BaseTargetDifficultyPatch;
     type DifficultyBomb: DifficultyBombPatch;
+    type Reward: RewardPatch;
 }
 
 pub struct FrontierPatch;
@@ -120,6 +176,7 @@ impl Patch for FrontierPatch {
     type Ethash = ethash::EthereumPatch;
     type BaseTargetDifficulty = FrontierBaseTargetDifficultyPatch;
     type DifficultyBomb = FrontierDifficultyBombPatch;
+    type Reward = FrontierRewardPatch<EthereumBaseRewardPatch>;
 }
 
 pub struct HomesteadPatch;
@@ -130,6 +187,7 @@ impl Patch for HomesteadPatch {
     type Ethash = ethash::EthereumPatch;
     type BaseTargetDifficulty = HomesteadBaseTargetDifficultyPatch;
     type DifficultyBomb = FrontierDifficultyBombPatch;
+    type Reward = FrontierRewardPatch<EthereumBaseRewardPatch>;
 }
 
 pub struct EIP150Patch;
@@ -140,6 +198,7 @@ impl Patch for EIP150Patch {
     type Ethash = ethash::EthereumPatch;
     type BaseTargetDifficulty = HomesteadBaseTargetDifficultyPatch;
     type DifficultyBomb = FrontierDifficultyBombPatch;
+    type Reward = FrontierRewardPatch<EthereumBaseRewardPatch>;
 }
 
 pub struct EIP160Patch;
@@ -150,4 +209,16 @@ impl Patch for EIP160Patch {
     type Ethash = ethash::EthereumPatch;
     type BaseTargetDifficulty = HomesteadBaseTargetDifficultyPatch;
     type DifficultyBomb = DelayedDifficultyBombPatch<ClassicDelayedPatch>;
+    type Reward = FrontierRewardPatch<EthereumBaseRewardPatch>;
+}
+
+pub struct ECIP1017Patch;
+impl Patch for ECIP1017Patch {
+    type VM = sputnikvm::EIP160Patch;
+    type Signature = block::ClassicSignaturePatch;
+    type TransactionValidation = block::HomesteadValidationPatch;
+    type Ethash = ethash::EthereumPatch;
+    type BaseTargetDifficulty = HomesteadBaseTargetDifficultyPatch;
+    type DifficultyBomb = DelayedDifficultyBombPatch<ClassicDelayedPatch>;
+    type Reward = EraReducedRewardPatch<EthereumBaseRewardPatch, ClassicEraPatch>;
 }

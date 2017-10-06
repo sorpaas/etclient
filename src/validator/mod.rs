@@ -83,8 +83,11 @@ impl EthereumProcessor {
             } else if block.header.number < U256::from(3000000) {
                 Box::new(EthereumValidator::<EIP150Patch>::new(
                     &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
-            } else {
+            } else if block.header.number < U256::from(5000001) {
                 Box::new(EthereumValidator::<EIP160Patch>::new(
+                    &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
+            } else {
+                Box::new(EthereumValidator::<ECIP1017Patch>::new(
                     &block, &parent.0, &self.database, &self.dag, &most_recent_block_hashes))
             };
 
@@ -215,29 +218,25 @@ impl<'a, P: Patch> EthereumValidator<'a, P> {
             receipts.push(receipt);
         }
 
-        // Apply block rewards
-        let basic_rewards = U256::from(5000000000000000000usize);
-        let main_rewards = basic_rewards + basic_rewards * U256::from(self.current_block.ommers.len()) / U256::from(32usize);
         let vm: SeqTransactionVM<P::VM> = stateful.execute(
             ValidTransaction {
                 caller: None,
                 gas_price: Gas::zero(),
                 gas_limit: Gas::from(1000000usize),
                 action: TransactionAction::Call(self.current_block.header.beneficiary),
-                value: main_rewards,
+                value: P::Reward::block_reward(self.current_block.header.number, self.current_block.ommers.len()),
                 input: Vec::new(),
                 nonce: U256::zero(),
             }, HeaderParams::from(&self.current_block.header), &self.most_recent_block_hashes);
 
         for uncle in &self.current_block.ommers {
-            let sub_rewards = basic_rewards - basic_rewards * (self.current_block.header.number - uncle.number) / U256::from(8usize);
             let vm: SeqTransactionVM<P::VM> = stateful.execute(
                 ValidTransaction {
                     caller: None,
                     gas_price: Gas::zero(),
                     gas_limit: Gas::from(1000000usize),
                     action: TransactionAction::Call(uncle.beneficiary),
-                    value: sub_rewards,
+                    value: P::Reward::uncle_reward(self.current_block.header.number - uncle.number),
                     input: Vec::new(),
                     nonce: U256::zero(),
                 }, HeaderParams::from(&self.current_block.header), &self.most_recent_block_hashes);
